@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Authentication - LittleGuide</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      // Environment variable configuration for Netlify
+      window.ENV = {
+        SUPABASE_URL: window.env?.SUPABASE_URL || "https://ftvdwtrdppnitnlhobvd.supabase.co",
+        SUPABASE_ANON_KEY: window.env?.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0dmR3dHJkcHBuaXRubGhvYnZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0OTE1OTQsImV4cCI6MjA3NzA2NzU5NH0.sFJma9u9nbZnWQYjd2mYZtiTIoLm_PnUI7rkO0q0PBM",
+      };
+    </script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+          sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        padding: 40px;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+      }
+
+      .logo {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 30px;
+        background: linear-gradient(135deg, #e11d48, #8b5cf6);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 32px;
+        font-weight: bold;
+      }
+
+      .status-icon {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+      }
+
+      .status-icon.verifying {
+        background: #f3f4f6;
+        color: #6b7280;
+      }
+
+      .status-icon.success {
+        background: #dcfce7;
+        color: #16a34a;
+      }
+
+      .status-icon.error {
+        background: #fef2f2;
+        color: #dc2626;
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f4f6;
+        border-top: 4px solid #8b5cf6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1f2937;
+        margin-bottom: 12px;
+      }
+
+      .subtitle {
+        font-size: 16px;
+        color: #6b7280;
+        line-height: 1.5;
+        margin-bottom: 30px;
+      }
+
+      .info-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 20px 0;
+      }
+
+      .info-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 8px;
+      }
+
+      .info-text {
+        font-size: 14px;
+        color: #6b7280;
+        line-height: 1.5;
+      }
+
+      .button {
+        background: #8b5cf6;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        margin: 10px;
+        transition: background-color 0.2s;
+      }
+
+      .button:hover {
+        background: #7c3aed;
+      }
+
+      .button.secondary {
+        background: #f3f4f6;
+        color: #6b7280;
+      }
+
+      .button.secondary:hover {
+        background: #e5e7eb;
+      }
+
+      .error-details {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 20px 0;
+        text-align: left;
+      }
+
+      .error-details h3 {
+        color: #dc2626;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .error-details p {
+        color: #7f1d1d;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 14px;
+        color: #6b7280;
+      }
+
+      .footer a {
+        color: #8b5cf6;
+        text-decoration: none;
+      }
+
+      .footer a:hover {
+        text-decoration: underline;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .form-container {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 20px 0;
+        text-align: left;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 8px;
+      }
+
+      .form-input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: border-color 0.2s;
+      }
+
+      .form-input:focus {
+        outline: none;
+        border-color: #8b5cf6;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+      }
+
+      .form-input.error {
+        border-color: #dc2626;
+      }
+
+      .form-error {
+        color: #dc2626;
+        font-size: 14px;
+        margin-top: 4px;
+      }
+
+      .form-success {
+        color: #16a34a;
+        font-size: 14px;
+        margin-top: 4px;
+      }
+
+      .password-requirements {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 8px;
+        font-size: 14px;
+        color: #0369a1;
+      }
+
+      .password-requirements ul {
+        margin: 8px 0 0 0;
+        padding-left: 20px;
+      }
+
+      .password-requirements li {
+        margin-bottom: 4px;
+      }
+
+      .config-warning {
+        background: #fef3c7;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 20px 0;
+        text-align: left;
+      }
+
+      .config-warning h3 {
+        color: #92400e;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .config-warning p {
+        color: #92400e;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 480px) {
+        .container {
+          padding: 30px 20px;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="logo" style="background: none; padding: 0">
+        <img
+          src="app-icon.png"
+          alt="LittleGuide Logo"
+          style="
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: block;
+            margin: 0 auto;
+            object-fit: cover;
+          "
+        />
+      </div>
+
+      <div id="verifying" class="verifying-section">
+        <div class="status-icon verifying">
+          <div class="spinner"></div>
+        </div>
+        <h1>Verifying Your Email</h1>
+        <p class="subtitle">
+          Please wait while we confirm your email address...
+        </p>
+      </div>
+
+      <div id="success" class="success-section hidden">
+        <div class="status-icon success">✓</div>
+        <h1>Email Verified! 🎉</h1>
+        <p class="subtitle">
+          Your email has been successfully verified. You can now sign in to your
+          LittleGuide account.
+        </p>
+
+        <div class="info-box">
+          <div class="info-title">✅ Verification Complete</div>
+          <div class="info-text">
+            Your email has been verified successfully. You can now access all
+            features of LittleGuide APP After signing in.
+          </div>
+        </div>
+      </div>
+
+      <div id="error" class="error-section hidden">
+        <div class="status-icon error">⚠</div>
+        <h1>Verification Failed</h1>
+        <p class="subtitle" id="error-message">
+          Something went wrong. Please try again or contact support.
+        </p>
+
+        <div class="error-details" id="error-details">
+          <h3>⚠️ Verification Failed</h3>
+          <p>
+            This could be due to an expired link or invalid token. Please try
+            the following:
+          </p>
+          <ul style="margin-top: 8px; padding-left: 20px">
+            <li>Go back to the sign-up page</li>
+            <li>Request a new verification email</li>
+            <li>Check your email and try again</li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="password-reset" class="password-reset-section hidden">
+        <div class="status-icon verifying">
+          <div class="spinner"></div>
+        </div>
+        <h1>Reset Your Password</h1>
+        <p class="subtitle">
+          Enter your new password below to complete the reset process.
+        </p>
+
+        <div class="form-container">
+          <form id="password-reset-form">
+            <div class="form-group">
+              <label for="new-password" class="form-label">New Password</label>
+              <input
+                type="password"
+                id="new-password"
+                class="form-input"
+                placeholder="Enter your new password"
+                required
+                minlength="8"
+              />
+              <div class="password-requirements">
+                <strong>Password Requirements:</strong>
+                <ul>
+                  <li>At least 8 characters long</li>
+                  <li>Contains at least one uppercase letter</li>
+                  <li>Contains at least one lowercase letter</li>
+                  <li>Contains at least one number</li>
+                </ul>
+              </div>
+              <div id="password-error" class="form-error hidden"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="confirm-password" class="form-label">Confirm Password</label>
+              <input
+                type="password"
+                id="confirm-password"
+                class="form-input"
+                placeholder="Confirm your new password"
+                required
+              />
+              <div id="confirm-error" class="form-error hidden"></div>
+            </div>
+
+            <button type="submit" class="button" id="reset-button">
+              Reset Password
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div id="password-reset-success" class="password-reset-success-section hidden">
+        <div class="status-icon success">✓</div>
+        <h1>Password Reset Complete! 🎉</h1>
+        <p class="subtitle">
+          Your password has been successfully updated. You can now sign in with your new password.
+        </p>
+
+        <div class="info-box">
+          <div class="info-title">✅ Password Updated</div>
+          <div class="info-text">
+            Your password has been successfully reset. You can now sign in to your LittleGuide account with your new password.
+          </div>
+        </div>
+
+        <a href="#" class="button" id="sign-in-link">Sign In to LittleGuide</a>
+      </div>
+
+      <div id="config-warning" class="config-warning hidden">
+        <h3>⚠️ Configuration Required</h3>
+        <p>
+          Environment variables are not properly configured. Please check your
+          deployment settings.
+        </p>
+      </div>
+
+      <div class="footer">
+        Need help? Contact
+        <a href="mailto:support@littleguide.ai">support@littleguide.ai</a>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        const supabaseUrl = window.ENV?.SUPABASE_URL;
+        const supabaseAnonKey = window.ENV?.SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+          console.error(
+            "Supabase configuration missing. Please set SUPABASE_URL and SUPABASE_ANON_KEY environment variables."
+          );
+          return;
+        }
+
+      // Initialize Supabase client
+      const supabase = window.supabase.createClient(
+        supabaseUrl,
+        supabaseAnonKey
+      );
+
+      // --- improved URL param parsing (reads both search and hash safely) ---
+      function getUrlParams() {
+        const search = new URLSearchParams(window.location.search);
+        // parse hash like "#access_token=...&type=...&token=..."
+        const rawHash = window.location.hash.startsWith("#")
+          ? window.location.hash.substring(1)
+          : window.location.hash;
+        const hash = new URLSearchParams(rawHash);
+
+        // helper to prefer search param then hash param
+        const getParam = (name) => search.get(name) || hash.get(name);
+
+         const params = {
+           token: getParam("token"),
+           type: getParam("type"),
+           email: getParam("email"),
+           access_token: getParam("access_token"),
+           refresh_token: getParam("refresh_token"),
+           provider_token: getParam("provider_token"),
+           code: getParam("code"),
+           error: getParam("error"),
+           error_code: getParam("error_code"),
+           error_description: getParam("error_description"),
+         };
+
+        console.log("=== URL PARAMETERS DEBUG ===");
+        console.log("Search params:", window.location.search);
+        console.log("Hash params:", window.location.hash);
+        console.log("Parsed params:", params);
+        console.log("===========================");
+
+        return params;
+      }
+
+      // Show section
+      function showSection(sectionId) {
+        document
+          .querySelectorAll(
+            '[id$="-section"], [id="verifying"], [id="success"], [id="error"], [id="password-reset"], [id="password-reset-success"]'
+          )
+          .forEach((section) => {
+            section.classList.add("hidden");
+          });
+        document.getElementById(sectionId).classList.remove("hidden");
+      }
+
+      // Show error
+      function showError(message, details = null) {
+        document.getElementById("error-message").textContent = message;
+        if (details) {
+          document.getElementById("error-details").innerHTML = details;
+        }
+        showSection("error");
+      }
+
+      // Validate password strength
+      function validatePassword(password) {
+        const requirements = {
+          length: password.length >= 8,
+          uppercase: /[A-Z]/.test(password),
+          lowercase: /[a-z]/.test(password),
+          number: /\d/.test(password),
+        };
+
+        const isValid = Object.values(requirements).every(Boolean);
+        return { isValid, requirements };
+      }
+
+      // Show form error
+      function showFormError(elementId, message) {
+        const errorElement = document.getElementById(elementId);
+        errorElement.textContent = message;
+        errorElement.classList.remove("hidden");
+        document.getElementById(elementId.replace("-error", "")).classList.add("error");
+      }
+
+      // Clear form error
+      function clearFormError(elementId) {
+        const errorElement = document.getElementById(elementId);
+        errorElement.textContent = "";
+        errorElement.classList.add("hidden");
+        document.getElementById(elementId.replace("-error", "")).classList.remove("error");
+      }
+
+      // --- PASSWORD RESET HANDLER ---
+      async function handlePasswordReset() {
+        try {
+          const { access_token, refresh_token, type } = getUrlParams();
+
+          // For recovery flows Supabase typically supplies type=recovery and access_token in the fragment.
+          if (type === "recovery" && access_token) {
+            // Set session using tokens so updateUser() will work
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+
+            if (error) {
+              console.error("Session error during recovery:", error);
+              showError(`Failed to authenticate for recovery: ${error.message}`);
+              return;
+            }
+          } else {
+            // No tokens: still show the reset form so user can request a new recovery email or paste tokens manually
+            console.log("No recovery tokens found; showing password reset form.");
+          }
+
+          showSection("password-reset");
+        } catch (error) {
+          console.error("Password reset setup error:", error);
+          showError(`Failed to setup password reset: ${error.message}`);
+        }
+      }
+
+      // Reset password
+      async function resetPassword(newPassword) {
+        try {
+          const { data, error } = await supabase.auth.updateUser({
+            password: newPassword,
+          });
+
+          if (error) {
+            console.error("Password reset error:", error);
+            throw error;
+          }
+
+          console.log("Password reset successful");
+          showSection("password-reset-success");
+        } catch (error) {
+          console.error("Password reset error:", error);
+          showFormError("password-error", `Failed to reset password: ${error.message}`);
+        }
+      }
+
+      // --- EMAIL VERIFICATION (handle both token and access_token cases) ---
+      async function verifyEmail() {
+        try {
+          const { token, access_token, type } = getUrlParams();
+          console.log("Verification params:", { token: !!token, access_token: !!access_token, type });
+
+          // For email verification, we can have either:
+          // 1. A token parameter (old format)
+          // 2. An access_token parameter (new format with session)
+          if (type !== "signup") {
+            showError("Invalid verification link type", "This link is not for email verification. Please check your email for the correct verification link.");
+            return;
+          }
+
+          if (access_token) {
+            // New format: use getSessionFromUrl to handle the session
+            console.log("Using getSessionFromUrl for email verification");
+            
+            // Check if getSessionFromUrl method exists
+            if (typeof supabase.auth.getSessionFromUrl !== 'function') {
+              console.error("getSessionFromUrl method not available");
+              showError("Verification method not supported", "This verification method is not supported. Please try requesting a new verification email.");
+              return;
+            }
+
+            const { data, error } = await supabase.auth.getSessionFromUrl({
+              storeSession: true,
+            });
+
+            if (error) {
+              console.error("Email verification error:", error);
+              showError(`Verification failed: ${error.message}`, "Please try requesting a new verification email from the app.");
+              return;
+            }
+
+            if (data?.session?.user) {
+              console.log("Email verification successful:", data.session.user.email);
+              showSection("success");
+            } else {
+              showError("Verification completed but no user data received", "The verification completed but we couldn't retrieve your user information. Please try signing in to the app.");
+            }
+          } else if (token) {
+            // Old format: use verifyOtp
+            console.log("Using verifyOtp for email verification");
+            const { data, error } = await supabase.auth.verifyOtp({
+              token,
+              type: "signup",
+            });
+
+            if (error) {
+              console.error("Email verification error:", error);
+              showError(`Verification failed: ${error.message}`, "Please try requesting a new verification email from the app.");
+              return;
+            }
+
+            if (data?.user) {
+              console.log("Email verification successful:", data.user.email);
+              showSection("success");
+            } else {
+              showError("Verification completed but no user data received", "The verification completed but we couldn't retrieve your user information. Please try signing in to the app.");
+            }
+          } else {
+            showError("No valid email verification token found", "This verification link is missing required information. Please check your email for the correct verification link.");
+          }
+        } catch (error) {
+          console.error("Email verification error:", error);
+          showError(`Failed to verify email: ${error.message || "Unknown error"}`, "Please try requesting a new verification email from the app.");
+        }
+      }
+
+      // --- GOOGLE OAUTH HANDLER (use getSessionFromUrl for robustness) ---
+      async function handleGoogleOAuth() {
+        try {
+          console.log("=== GOOGLE OAUTH HANDLER STARTED ===");
+
+          // Check if getSessionFromUrl method exists
+          if (typeof supabase.auth.getSessionFromUrl !== 'function') {
+            console.error("getSessionFromUrl method not available");
+            showError("OAuth method not supported", "This authentication method is not supported. Please try signing in again.");
+            return;
+          }
+
+          // This helper will parse the URL fragment and set the session
+          // It also returns session / error info.
+          const { data, error } = await supabase.auth.getSessionFromUrl({
+            storeSession: true, // ensures the session is stored in localStorage
+          });
+
+          if (error) {
+            console.error("getSessionFromUrl error:", error);
+            showError(`Google Sign-In failed: ${error.message}`, "Please try signing in with Google again.");
+            return;
+          }
+
+          // If we have a session and user, show success UI
+          if (data?.session?.user) {
+            console.log("Google Sign-In successful:", data.session.user.email);
+            // Show success but ensure it's the OAuth success UI, not email verification
+            document.querySelector("#success h1").textContent =
+              "Google Sign-In Successful! 🎉";
+            document.querySelector("#success .subtitle").textContent =
+              "You have successfully signed in with Google. You can now close this window and return to the app.";
+            showSection("success");
+
+            // close the popup if the page was opened as a popup
+            setTimeout(() => {
+              try {
+                window.close();
+              } catch (e) {
+                // ignore window close failures
+              }
+            }, 1500);
+          } else {
+            showError("Google Sign-In completed but no user data received", "The sign-in completed but we couldn't retrieve your user information. Please try signing in again.");
+          }
+        } catch (error) {
+          console.error("Google OAuth error:", error);
+          showError(`Google Sign-In failed: ${error.message}`, "Please try signing in with Google again.");
+        }
+      }
+
+       // --- INITIALIZE PAGE (decide which flow we are in) ---
+       function initializePage() {
+         const { type, access_token, token, code, error, error_code, error_description } = getUrlParams();
+         console.log("Decision params:", { type, access_token: !!access_token, token: !!token, code: !!code, error, error_code });
+
+         // Check for error parameters first
+         if (error || error_code) {
+           console.log("Detected error in URL:", { error, error_code, error_description });
+           if (error_code === "otp_expired" || error === "access_denied") {
+             showError("Verification link has expired", "This verification link is no longer valid. Please request a new verification email from the app.");
+             return;
+           } else if (error_code === "invalid_token" || error === "invalid_request") {
+             showError("Invalid verification link", "This verification link is not valid. Please check your email for the correct link or request a new one.");
+             return;
+           } else if (error_code === "user_not_found") {
+             showError("Account not found", "No account was found with this email address. Please check your email or create a new account.");
+             return;
+           } else {
+             showError("Authentication Error", error_description || "Something went wrong. Please try again.");
+             return;
+           }
+         }
+
+         // Order explicitly:
+         // 1) recovery (password reset)
+         // 2) oauth (has access_token OR code parameter)
+         // 3) signup verification (type === 'signup' and token present)
+         if (type === "recovery") {
+           console.log("Detected password reset flow");
+           handlePasswordReset();
+           return;
+         }
+
+         // Email verification: explicit type=signup (with or without token)
+         if (type === "signup") {
+           console.log("Detected email verification flow");
+           verifyEmail();
+           return;
+         }
+
+         // OAuth: access_token present in hash OR code parameter -> treat it as OAuth callback
+         if (access_token || code) {
+           console.log("Detected OAuth flow (access_token or code present)");
+           handleGoogleOAuth();
+           return;
+         }
+
+   // Fallback: show password reset form by default (or your preferred default)
+         console.log("No known parameters detected; showing recovery form by default");
+         handlePasswordReset();
+       }
+
+      // Start verification when page loads
+      document.addEventListener("DOMContentLoaded", () => {
+        initializePage();
+      });
+
+      // Handle password reset form submission
+      document.addEventListener("DOMContentLoaded", () => {
+        const form = document.getElementById("password-reset-form");
+        if (form) {
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            
+            const newPassword = document.getElementById("new-password").value;
+            const confirmPassword = document.getElementById("confirm-password").value;
+            
+            // Clear previous errors
+            clearFormError("password-error");
+            clearFormError("confirm-error");
+            
+            // Validate password
+            const validation = validatePassword(newPassword);
+            if (!validation.isValid) {
+              showFormError("password-error", "Password does not meet requirements");
+              return;
+            }
+            
+            // Check if passwords match
+            if (newPassword !== confirmPassword) {
+              showFormError("confirm-error", "Passwords do not match");
+              return;
+            }
+            
+            // Disable form during submission
+            const submitButton = document.getElementById("reset-button");
+            submitButton.disabled = true;
+            submitButton.textContent = "Resetting...";
+            
+            try {
+              await resetPassword(newPassword);
+            } finally {
+              submitButton.disabled = false;
+              submitButton.textContent = "Reset Password";
+            }
+          });
+        }
+
+        // Handle sign-in link
+        const signInLink = document.getElementById("sign-in-link");
+        if (signInLink) {
+          signInLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            // Redirect to the app's sign-in page
+            window.location.href = "https://AbrhamWendmeneh.github.io/little-guide/";
+          });
+        }
+      });
+      })(); // Close the IIFE
+    </script>
+  </body>
+</html>
