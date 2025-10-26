@@ -455,146 +455,389 @@
         <a href="mailto:support@littleguide.ai">support@littleguide.ai</a>
       </div>
     </div>
-<script>
-  // ✅ Initialize Supabase client
-  const supabase = window.supabase.createClient(
-    "https://<YOUR-SUPABASE-PROJECT-URL>.supabase.co",
-    "<YOUR-ANON-PUBLIC-KEY>"
-  );
 
-  // ✅ Utility: parse both query and hash parameters
-  function getUrlParams() {
-    const params = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(window.location.hash.replace("#", ""));
-    return Object.fromEntries([...params.entries(), ...hashParams.entries()]);
-  }
+    <script>
+      (function() {
+        const supabaseUrl = window.ENV?.SUPABASE_URL;
+        const supabaseAnonKey = window.ENV?.SUPABASE_ANON_KEY;
 
-  // ✅ Show/hide UI sections
-  function showSection(sectionId) {
-    document.querySelectorAll(".section").forEach(el => (el.style.display = "none"));
-    document.getElementById(sectionId).style.display = "block";
-  }
+        if (!supabaseUrl || !supabaseAnonKey) {
+          console.error(
+            "Supabase configuration missing. Please set SUPABASE_URL and SUPABASE_ANON_KEY environment variables."
+          );
+          return;
+        }
 
-  function showError(message) {
-    document.getElementById("error-message").textContent = message;
-    showSection("error-section");
-  }
+      // Initialize Supabase client
+      const supabase = window.supabase.createClient(
+        supabaseUrl,
+        supabaseAnonKey
+      );
 
-  function showSuccess(message) {
-    document.getElementById("success-message").textContent = message;
-    showSection("success-section");
-  }
+      // --- improved URL param parsing (reads both search and hash safely) ---
+      function getUrlParams() {
+        const search = new URLSearchParams(window.location.search);
+        // parse hash like "#access_token=...&type=...&token=..."
+        const rawHash = window.location.hash.startsWith("#")
+          ? window.location.hash.substring(1)
+          : window.location.hash;
+        const hash = new URLSearchParams(rawHash);
 
-  // ✅ Email verification (sign-up)
-  async function verifyEmail() {
-    try {
-      const { data, error } = await supabase.auth.getSessionFromUrl({ storeSession: true });
-      if (error) throw error;
-      showSuccess("✅ Email verified successfully! You can now log in.");
-    } catch (err) {
-      console.error("Email verification error:", err);
-      showError("⚠ Verification failed. Please try again.");
-    }
-  }
+        // helper to prefer search param then hash param
+        const getParam = (name) => search.get(name) || hash.get(name);
 
-  // ✅ Handle Google / OAuth callbacks
-  async function handleGoogleOAuth() {
-    try {
-      const { data, error } = await supabase.auth.getSessionFromUrl({ storeSession: true });
-      if (error) throw error;
-      showSuccess("✅ Signed in successfully via OAuth!");
-    } catch (err) {
-      console.error("OAuth error:", err);
-      showError("⚠ OAuth method not supported or failed.");
-    }
-  }
+         const params = {
+           token: getParam("token"),
+           type: getParam("type"),
+           email: getParam("email"),
+           access_token: getParam("access_token"),
+           refresh_token: getParam("refresh_token"),
+           provider_token: getParam("provider_token"),
+           code: getParam("code"),
+           error: getParam("error"),
+           error_code: getParam("error_code"),
+           error_description: getParam("error_description"),
+         };
 
-  // ✅ Handle password reset links
-  async function handlePasswordReset() {
-    const { access_token, refresh_token } = getUrlParams();
-    if (access_token && refresh_token) {
-      try {
-        await supabase.auth.setSession({ access_token, refresh_token });
-        showSection("password-reset-section");
-      } catch (err) {
-        console.error("Set session error:", err);
-        showError("⚠ Unable to start password reset session.");
+        console.log("=== URL PARAMETERS DEBUG ===");
+        console.log("Search params:", window.location.search);
+        console.log("Hash params:", window.location.hash);
+        console.log("Parsed params:", params);
+        console.log("===========================");
+
+        return params;
       }
-    } else {
-      showSection("request-reset-section");
-    }
-  }
 
-  // ✅ Handle actual password update
-  async function updatePassword() {
-    const newPassword = document.getElementById("new-password").value;
-    if (!newPassword) return showError("Please enter a new password.");
-    try {
-      const { data, error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      showSuccess("✅ Password updated successfully!");
-    } catch (err) {
-      console.error("Password update error:", err);
-      showError("⚠ Failed to update password.");
-    }
-  }
+      // Show section
+      function showSection(sectionId) {
+        document
+          .querySelectorAll(
+            '[id$="-section"], [id="verifying"], [id="success"], [id="error"], [id="password-reset"], [id="password-reset-success"]'
+          )
+          .forEach((section) => {
+            section.classList.add("hidden");
+          });
+        document.getElementById(sectionId).classList.remove("hidden");
+      }
 
-  // ✅ Request password reset link
-  async function requestPasswordReset() {
-    const email = document.getElementById("reset-email").value;
-    if (!email) return showError("Please enter your email address.");
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: "https://eman.com",
+      // Show error
+      function showError(message, details = null) {
+        document.getElementById("error-message").textContent = message;
+        if (details) {
+          document.getElementById("error-details").innerHTML = details;
+        }
+        showSection("error");
+      }
+
+      // Validate password strength
+      function validatePassword(password) {
+        const requirements = {
+          length: password.length >= 8,
+          uppercase: /[A-Z]/.test(password),
+          lowercase: /[a-z]/.test(password),
+          number: /\d/.test(password),
+        };
+
+        const isValid = Object.values(requirements).every(Boolean);
+        return { isValid, requirements };
+      }
+
+      // Show form error
+      function showFormError(elementId, message) {
+        const errorElement = document.getElementById(elementId);
+        errorElement.textContent = message;
+        errorElement.classList.remove("hidden");
+        document.getElementById(elementId.replace("-error", "")).classList.add("error");
+      }
+
+      // Clear form error
+      function clearFormError(elementId) {
+        const errorElement = document.getElementById(elementId);
+        errorElement.textContent = "";
+        errorElement.classList.add("hidden");
+        document.getElementById(elementId.replace("-error", "")).classList.remove("error");
+      }
+
+      // --- PASSWORD RESET HANDLER ---
+      async function handlePasswordReset() {
+        try {
+          const { access_token, refresh_token, type } = getUrlParams();
+
+          // For recovery flows Supabase typically supplies type=recovery and access_token in the fragment.
+          if (type === "recovery" && access_token) {
+            // Set session using tokens so updateUser() will work
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+
+            if (error) {
+              console.error("Session error during recovery:", error);
+              showError(`Failed to authenticate for recovery: ${error.message}`);
+              return;
+            }
+          } else {
+            // No tokens: still show the reset form so user can request a new recovery email or paste tokens manually
+            console.log("No recovery tokens found; showing password reset form.");
+          }
+
+          showSection("password-reset");
+        } catch (error) {
+          console.error("Password reset setup error:", error);
+          showError(`Failed to setup password reset: ${error.message}`);
+        }
+      }
+
+      // Reset password
+      async function resetPassword(newPassword) {
+        try {
+          const { data, error } = await supabase.auth.updateUser({
+            password: newPassword,
+          });
+
+          if (error) {
+            console.error("Password reset error:", error);
+            throw error;
+          }
+
+          console.log("Password reset successful");
+          showSection("password-reset-success");
+        } catch (error) {
+          console.error("Password reset error:", error);
+          showFormError("password-error", `Failed to reset password: ${error.message}`);
+        }
+      }
+
+      // --- EMAIL VERIFICATION (handle both token and access_token cases) ---
+      async function verifyEmail() {
+        try {
+          const { token, access_token, type } = getUrlParams();
+          console.log("Verification params:", { token: !!token, access_token: !!access_token, type });
+
+          // For email verification, we can have either:
+          // 1. A token parameter (old format)
+          // 2. An access_token parameter (new format with session)
+          if (type !== "signup") {
+            showError("Invalid verification link type", "This link is not for email verification. Please check your email for the correct verification link.");
+            return;
+          }
+
+          if (access_token) {
+            // New format: use getSessionFromUrl to handle the session
+            console.log("Using getSessionFromUrl for email verification");
+            
+            // Check if getSessionFromUrl method exists
+            if (typeof supabase.auth.getSessionFromUrl !== 'function') {
+              console.error("getSessionFromUrl method not available");
+              showError("Verification method not supported", "This verification method is not supported. Please try requesting a new verification email.");
+              return;
+            }
+
+            const { data, error } = await supabase.auth.getSessionFromUrl({
+              storeSession: true,
+            });
+
+            if (error) {
+              console.error("Email verification error:", error);
+              showError(`Verification failed: ${error.message}`, "Please try requesting a new verification email from the app.");
+              return;
+            }
+
+            if (data?.session?.user) {
+              console.log("Email verification successful:", data.session.user.email);
+              showSection("success");
+            } else {
+              showError("Verification completed but no user data received", "The verification completed but we couldn't retrieve your user information. Please try signing in to the app.");
+            }
+          } else if (token) {
+            // Old format: use verifyOtp
+            console.log("Using verifyOtp for email verification");
+            const { data, error } = await supabase.auth.verifyOtp({
+              token,
+              type: "signup",
+            });
+
+            if (error) {
+              console.error("Email verification error:", error);
+              showError(`Verification failed: ${error.message}`, "Please try requesting a new verification email from the app.");
+              return;
+            }
+
+            if (data?.user) {
+              console.log("Email verification successful:", data.user.email);
+              showSection("success");
+            } else {
+              showError("Verification completed but no user data received", "The verification completed but we couldn't retrieve your user information. Please try signing in to the app.");
+            }
+          } else {
+            showError("No valid email verification token found", "This verification link is missing required information. Please check your email for the correct verification link.");
+          }
+        } catch (error) {
+          console.error("Email verification error:", error);
+          showError(`Failed to verify email: ${error.message || "Unknown error"}`, "Please try requesting a new verification email from the app.");
+        }
+      }
+
+      // --- GOOGLE OAUTH HANDLER (use getSessionFromUrl for robustness) ---
+      async function handleGoogleOAuth() {
+        try {
+          console.log("=== GOOGLE OAUTH HANDLER STARTED ===");
+
+          // Check if getSessionFromUrl method exists
+          if (typeof supabase.auth.getSessionFromUrl !== 'function') {
+            console.error("getSessionFromUrl method not available");
+            showError("OAuth method not supported", "This authentication method is not supported. Please try signing in again.");
+            return;
+          }
+
+          // This helper will parse the URL fragment and set the session
+          // It also returns session / error info.
+          const { data, error } = await supabase.auth.getSessionFromUrl({
+            storeSession: true, // ensures the session is stored in localStorage
+          });
+
+          if (error) {
+            console.error("getSessionFromUrl error:", error);
+            showError(`Google Sign-In failed: ${error.message}`, "Please try signing in with Google again.");
+            return;
+          }
+
+          // If we have a session and user, show success UI
+          if (data?.session?.user) {
+            console.log("Google Sign-In successful:", data.session.user.email);
+            // Show success but ensure it's the OAuth success UI, not email verification
+            document.querySelector("#success h1").textContent =
+              "Google Sign-In Successful! 🎉";
+            document.querySelector("#success .subtitle").textContent =
+              "You have successfully signed in with Google. You can now close this window and return to the app.";
+            showSection("success");
+
+            // close the popup if the page was opened as a popup
+            setTimeout(() => {
+              try {
+                window.close();
+              } catch (e) {
+                // ignore window close failures
+              }
+            }, 1500);
+          } else {
+            showError("Google Sign-In completed but no user data received", "The sign-in completed but we couldn't retrieve your user information. Please try signing in again.");
+          }
+        } catch (error) {
+          console.error("Google OAuth error:", error);
+          showError(`Google Sign-In failed: ${error.message}`, "Please try signing in with Google again.");
+        }
+      }
+
+       // --- INITIALIZE PAGE (decide which flow we are in) ---
+       function initializePage() {
+         const { type, access_token, token, code, error, error_code, error_description } = getUrlParams();
+         console.log("Decision params:", { type, access_token: !!access_token, token: !!token, code: !!code, error, error_code });
+
+         // Check for error parameters first
+         if (error || error_code) {
+           console.log("Detected error in URL:", { error, error_code, error_description });
+           if (error_code === "otp_expired" || error === "access_denied") {
+             showError("Verification link has expired", "This verification link is no longer valid. Please request a new verification email from the app.");
+             return;
+           } else if (error_code === "invalid_token" || error === "invalid_request") {
+             showError("Invalid verification link", "This verification link is not valid. Please check your email for the correct link or request a new one.");
+             return;
+           } else if (error_code === "user_not_found") {
+             showError("Account not found", "No account was found with this email address. Please check your email or create a new account.");
+             return;
+           } else {
+             showError("Authentication Error", error_description || "Something went wrong. Please try again.");
+             return;
+           }
+         }
+
+         // Order explicitly:
+         // 1) recovery (password reset)
+         // 2) oauth (has access_token OR code parameter)
+         // 3) signup verification (type === 'signup' and token present)
+         if (type === "recovery") {
+           console.log("Detected password reset flow");
+           handlePasswordReset();
+           return;
+         }
+
+         // Email verification: explicit type=signup (with or without token)
+         if (type === "signup") {
+           console.log("Detected email verification flow");
+           verifyEmail();
+           return;
+         }
+
+         // OAuth: access_token present in hash OR code parameter -> treat it as OAuth callback
+         if (access_token || code) {
+           console.log("Detected OAuth flow (access_token or code present)");
+           handleGoogleOAuth();
+           return;
+         }
+
+   // Fallback: show password reset form by default (or your preferred default)
+         console.log("No known parameters detected; showing recovery form by default");
+         handlePasswordReset();
+       }
+
+      // Start verification when page loads
+      document.addEventListener("DOMContentLoaded", () => {
+        initializePage();
       });
-      if (error) throw error;
-      showSuccess("📩 Password reset email sent successfully!");
-    } catch (err) {
-      console.error("Reset password error:", err);
-      showError("⚠ Failed to send reset email.");
-    }
-  }
 
-  // ✅ The critical fix: reordered flow detection
-  function initializePage() {
-    const { type, access_token, code, error, error_code, error_description } = getUrlParams();
-    console.log("Detected flow:", { type, access_token: !!access_token, code: !!code });
+      // Handle password reset form submission
+      document.addEventListener("DOMContentLoaded", () => {
+        const form = document.getElementById("password-reset-form");
+        if (form) {
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            
+            const newPassword = document.getElementById("new-password").value;
+            const confirmPassword = document.getElementById("confirm-password").value;
+            
+            // Clear previous errors
+            clearFormError("password-error");
+            clearFormError("confirm-error");
+            
+            // Validate password
+            const validation = validatePassword(newPassword);
+            if (!validation.isValid) {
+              showFormError("password-error", "Password does not meet requirements");
+              return;
+            }
+            
+            // Check if passwords match
+            if (newPassword !== confirmPassword) {
+              showFormError("confirm-error", "Passwords do not match");
+              return;
+            }
+            
+            // Disable form during submission
+            const submitButton = document.getElementById("reset-button");
+            submitButton.disabled = true;
+            submitButton.textContent = "Resetting...";
+            
+            try {
+              await resetPassword(newPassword);
+            } finally {
+              submitButton.disabled = false;
+              submitButton.textContent = "Reset Password";
+            }
+          });
+        }
 
-    // 1️⃣ Error handler
-    if (error || error_code) {
-      showError(error_description || "Unexpected error occurred.");
-      return;
-    }
-
-    // 2️⃣ Password recovery flow
-    if (type === "recovery") {
-      handlePasswordReset();
-      return;
-    }
-
-    // 3️⃣ Email confirmation flow (signup)
-    if (type === "signup") {
-      verifyEmail();
-      return;
-    }
-
-    // 4️⃣ OAuth / magic link flow
-    if (access_token || code) {
-      handleGoogleOAuth();
-      return;
-    }
-
-    // 5️⃣ Default view
-    showSection("request-reset-section");
-  }
-
-  // ✅ Attach event listeners
-  document.addEventListener("DOMContentLoaded", () => {
-    initializePage();
-    document.getElementById("reset-password-btn")?.addEventListener("click", updatePassword);
-    document.getElementById("send-reset-btn")?.addEventListener("click", requestPasswordReset);
-  });
-</script>
-
-    </body>
-    </html>
+        // Handle sign-in link
+        const signInLink = document.getElementById("sign-in-link");
+        if (signInLink) {
+          signInLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            // Redirect to the app's sign-in page
+            window.location.href = "https://AbrhamWendmeneh.github.io/little-guide/";
+          });
+        }
+      });
+      })(); // Close the IIFE
+    </script>
+  </body>
+</html>
